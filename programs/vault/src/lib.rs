@@ -145,12 +145,41 @@ impl<'info> Withdraw<'info> {
 
 pub struct CloseVault<'info> {
     #[account(mut)]
-    pub signer: Signer<'info>
+    pub signer: UncheckedAccount<'info>,
+
+    #[account(mut, 
+        seeds=[b"state", 
+        signer.key().as_ref()], 
+        bump=vault_state.state_bump
+    )]
+    pub vault_state: Account<'info, VaultState>,
+
+    #[account(mut, seeds=[vault_state.key().as_ref()], bump=vault_state.vault_bump)]
+    pub vault: SystemAccount<'info>,
+
+    pub system_program: Program<'info, System>,
 }
 
 impl<'info> CloseVault<'info> {
     pub fn close_vault(&mut self) -> Result<()>{
+        let system_program = self.system_program.to_account_info();
+        let amount = self.vault.lamports();
 
+        let accounts = Transfer {
+            from: self.vault.to_account_info(),
+            to: self.signer.to_account_info(),
+        };
+
+        let vault_key = self.vault_state.key();
+        let vault_bump = self.vault_state.vault_bump;
+
+        let vault_seeds = [vault_key.as_ref(), &[vault_bump]];
+
+        let signer_seeds: &[&[&[u8]]] = &[&vault_seeds];
+
+        let cpi_ctx = CpiContext::new_with_signer(system_program, accounts, signer_seeds);
+
+        transfer(cpi_ctx, amount)?;
         Ok(())
     }
 }
